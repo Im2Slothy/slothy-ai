@@ -1,30 +1,64 @@
-local aiPerson = nil
+-- Function to draw text in 3D
+function DrawText3D(x, y, z, text, scl, font)
+    local onScreen, _x, _y = World3dToScreen2d(x, y, z)
+    local camX, camY, camZ = table.unpack(GetGameplayCamCoords())
+    local dist = GetDistanceBetweenCoords(camX, camY, camZ, x, y, z, 1)
 
--- So this spawns the AI onto the map
-function SpawnAI()
--- CREATE_PED
-    print("Spawning AI...")
-    local pedType = 4 -- Ped type for human-like characters
-    local modelHash = GetHashKey('s_m_m_movalien_01') -- Alien Model
-    local heading = 295.51 -- Heading of the AI
-    local isNetwork = true
-    local bScriptHostPed = false
+    local scale = (1 / dist) * scl
+    local fov = (1 / GetGameplayCamFov()) * 100
+    local scale = scale * fov
 
-    print("Model Hash:", modelHash)
-    print("Coordinates: 253.9, -876.43, 30.29")
-
-    aiPerson = CreatePed(pedType, modelHash, 253.9, -876.43, 30.30, heading, isNetwork, bScriptHostPed)  
-    SetEntityInvincible(aiPerson, true)
-    FreezeEntityPosition(aiPerson, true)
-    SetEntityVisible(aiPerson, true, true) -- I think it wont spawn because of something here, I am getting the print statements though
-
-    print("AI spawned successfully!")
+    if onScreen then
+        SetTextScale(0.0 * scale, 1.1 * scale)
+        SetTextFont(font)
+        SetTextProportional(1)
+        SetTextColour(255, 255, 255, 255)
+        SetTextDropshadow(0, 0, 0, 0, 255)
+        SetTextEdge(2, 0, 0, 0, 150)
+        SetTextDropShadow()
+        SetTextOutline()
+        SetTextEntry("STRING")
+        SetTextCentre(1)
+        AddTextComponentString(text)
+        DrawText(_x, _y)
+    end
 end
 
--- When the script starts make sure the AI actually Spawns
-AddEventHandler('onResourceStart', function(resourceName)
-    if GetCurrentResourceName() == resourceName then
-        SpawnAI()
-        print('AI spawned successfully!')
+-- Function to add an NPC
+function addNPC(x, y, z, heading, model, headingText)
+    RequestModel(GetHashKey(model))
+    while not HasModelLoaded(GetHashKey(model)) do
+        Wait(15)
+    end
+    ped = CreatePed(4, GetHashKey(model), x, y, z - 1, heading, false, true)
+    FreezeEntityPosition(ped, true)
+    SetEntityInvincible(ped, true)
+    SetBlockingOfNonTemporaryEvents(ped, true)
+end
+
+-- Main code to spawn NPCs and display text
+CreateThread(function()
+    local displayText = true
+    local displayDistance = 20.0
+    local displayColor = "~g~"
+
+    local peds = {
+        -- { x, y, z, ped heading, ped model, heading text }
+        {254.34, -876.95, 30.30, 292.66, "s_m_m_scientist_01", "Talk to an AI"}
+    }
+
+    for _, v in pairs(peds) do
+        addNPC(v[1], v[2], v[3], v[4], v[5], v[6])
+    end
+
+    while displayText do
+        local pos = GetEntityCoords(PlayerPedId())
+        Wait(0)
+        for _, v in pairs(peds) do
+            local distance = #(pos - vec3(v[1], v[2], v[3]))
+            if (distance < displayDistance) then
+                DrawText3D(v[1], v[2], v[3] + 1, displayColor .. v[6], 1.2, 1)
+            end
+        end
     end
 end)
