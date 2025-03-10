@@ -4,11 +4,11 @@ Find an AI in server and ask it questions that ChatGPT will be able to answer us
 
 # Usage
 When starting the script, the AI will spawn in the set coordinates.
-Approach the AI, press 'E', and ask a question using /askAI.
+Approach the AI and target it with QB target. 
 
 # ChatGPT Setup
-Obtain an [OpenAI GPT API Key](https://openai.com/blog/openai-api).
-Replace 'YOUR_API_KEY' in the server-side Lua script with your actual API key.
+Obtain an [Grok API KEY](https://console.x.ai/)
+Replace 'API KEY HERE' config.lua 
 
 # Contact
-For questions or feedback, please contact Tonyvee#0 or Im2Slothy#0
+For questions or feedback, please contact Im2Slothy#0
