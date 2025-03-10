@@ -1,103 +1,141 @@
-local chatGPTEnabled = true
-local aiPed = nil
+QBCore = exports['qb-core']:GetCoreObject()
 
--- Function to prompt the player to press a key when close to the AI
-function PromptForQuestion()
-    local playerPed = PlayerPedId()
-    local pos = GetEntityCoords(playerPed)
-    local aiPos = GetEntityCoords(aiPed)
-    local distance = #(pos - aiPos)
+local currentResponse = nil
+local displayActive = false
+local displayPed = nil
 
-    if distance < 3.0 then
-        DrawText3D(aiPos.x, aiPos.y, aiPos.z + 2.0, "~b~Press E to ask a question", 0.5, 0)
-        if IsControlJustReleased(0, 38) then -- 'E' key
-            DisplayOnscreenKeyboard(true, "FMMC_KEY_TIP8", "", "", "", "", "", 128)
-            while UpdateOnscreenKeyboard() ~= 1 and UpdateOnscreenKeyboard() ~= 2 do
-                Wait(0)
-            end
-            local question = GetOnscreenKeyboardResult()
-            if question and question ~= "" then
-                AskQuestion(question)
-            end
-        end
+-- Load and create the ped when resource starts
+Citizen.CreateThread(function()
+    RequestModel(GetHashKey(Config.AIModel))
+    while not HasModelLoaded(GetHashKey(Config.AIModel)) do
+        Wait(1)
     end
-end
 
--- Function to ask a question to ChatGPT and display the response
-function AskQuestion(question)
-    local response = GetChatGPTResponse(question)
+    local ped = CreatePed(4, GetHashKey(Config.AIModel), Config.AILocation.x, Config.AILocation.y, Config.AILocation.z-1, Config.AILocation.heading, false, true)
+    SetEntityHeading(ped, Config.AILocation.heading)
+    FreezeEntityPosition(ped, true)
+    SetEntityInvincible(ped, true)
+    SetBlockingOfNonTemporaryEvents(ped, true)
+    displayPed = ped
 
-    -- Display the response above the AI's head
-    if response then
-        local aiPos = GetEntityCoords(aiPed)
-        DrawText3D(aiPos.x, aiPos.y, aiPos.z + 2.5, "~g~ChatGPT: " .. response, 0.5, 0)
-    end
-end
-
--- Function to send a question to ChatGPT and get a response
-function GetChatGPTResponse(question)
-    local apiKey = "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"
-    local apiUrl = "https://api.openai.com/v1/chat/completions"
-
-    local requestData = {
-        model = "gpt-3.5-turbo",
-        messages = {
+    -- Add qb-target interaction
+    exports['qb-target']:AddTargetEntity(ped, {
+        options = {
             {
-                role = "user",
-                content = question,
+                type = "client",
+                event = "slothyAI:openQuestionMenu",
+                icon = "fas fa-question",
+                label = "Ask Question",
             },
-            {
-                role = "system",
-                content = "You are a personal assistant for a FiveM server called Slothy's Testing Server",
-            }
-        }
-    }
-
-    PerformHttpRequest(apiUrl, function(statusCode, response, headers)
-        if statusCode == 200 then
-            local responseData = json.decode(response)
-            if responseData and responseData.choices then
-                local answer = responseData.choices[1].message.content
-                return answer
-            else
-                print("ChatGPT API request failed:", response)
-                return nil
-            end
-        else
-            print("ChatGPT API request failed. Status code:", statusCode)
-            return nil
-        end
-    end, 'POST', json.encode(requestData), {
-        ['Content-Type'] = 'application/json',
-        ['Authorization'] = 'Bearer ' .. apiKey
+        },
+        distance = 2.0
     })
-end
 
--- Main loop to check for player interaction
-CreateThread(function()
+    -- Single thread for text display
     while true do
         Wait(0)
-        if chatGPTEnabled then
-            local playerPed = PlayerPedId()
-            if IsPedOnFoot(playerPed) then
-                PromptForQuestion()
-            end
+        if currentResponse and displayPed then
+            local coords = GetEntityCoords(displayPed)
+            DrawText3D(coords.x, coords.y, coords.z + 1.0, currentResponse)
         end
     end
 end)
 
--- Function to draw text in 3D
-function DrawText3D(x, y, z, text, scale, font)
+-- Handle the question menu
+RegisterNetEvent('slothyAI:openQuestionMenu')
+AddEventHandler('slothyAI:openQuestionMenu', function()
+    local input = exports['qb-input']:ShowInput({
+        header = "Ask the AI",
+        submitText = "Submit",
+        inputs = {
+            {
+                type = 'text',
+                isRequired = true,
+                name = 'question',
+                text = 'Type your question here'
+            }
+        }
+    })
+    
+    if input and input.question then
+        TriggerServerEvent('slothyAI:askQuestion', input.question)
+    end
+end)
+
+-- Display AI response above ped
+RegisterNetEvent('slothyAI:showResponse')
+AddEventHandler('slothyAI:showResponse', function(response)
+    if displayPed then
+        currentResponse = response
+        if not displayActive then
+            displayActive = true
+            Citizen.CreateThread(function()
+                Wait(10000) -- Display for 10 seconds
+                currentResponse = nil
+                displayActive = false
+            end)
+        end
+    end
+end)
+
+-- Simple word wrap function
+function WordWrap(text, maxCharsPerLine)
+    local wrappedText = {}
+    local currentLine = ""
+    local words = {}
+    
+    -- Split text into words
+    for word in string.gmatch(text, "%S+") do
+        table.insert(words, word)
+    end
+    
+    -- Build lines
+    for i, word in ipairs(words) do
+        local newLength = string.len(currentLine .. word)
+        if newLength <= maxCharsPerLine then
+            currentLine = currentLine .. (currentLine == "" and "" or " ") .. word
+        else
+            if currentLine ~= "" then
+                table.insert(wrappedText, currentLine)
+            end
+            currentLine = word
+        end
+    end
+    if currentLine ~= "" then
+        table.insert(wrappedText, currentLine)
+    end
+    
+    return wrappedText
+end
+
+-- 3D text and bubble drawing function
+function DrawText3D(x, y, z, text)
+    -- Word wrap the text
+    local maxCharsPerLine = 30
+    local lines = WordWrap(text, maxCharsPerLine)
+    local lineHeight = 0.1
+    
+    -- Adjust this value to lower the text (increase negative value to move down)
+    local heightOffset = 0 
+    
+    -- Draw each line of text
+    for i, line in ipairs(lines) do
+        local textZ = z + heightOffset + (lineHeight * (i - 1))
+        DrawText3DLine(x, y, textZ, line)
+    end
+end
+
+-- Draw a single line of text with better visibility
+function DrawText3DLine(x, y, z, text)
     local onScreen, _x, _y = World3dToScreen2d(x, y, z)
     if onScreen then
-        SetTextScale(0.0 * scale, 0.35 * scale)
-        SetTextFont(font)
-        SetTextColour(255, 255, 255, 255)
-        SetTextDropshadow(0, 0, 0, 0, 255)
-        SetTextDropShadow()
-        SetTextOutline()
-        SetTextCentre(true)
+        SetTextScale(0.25, 0.25) -- Increased size for better visibility
+        SetTextFont(4)
+        SetTextProportional(1)
+        SetTextColour(255, 255, 255, 255) -- Full opacity
         SetTextEntry("STRING")
+        SetTextCentre(1)
+        SetTextDropshadow(1, 0, 0, 0, 255) -- Added drop shadow for visibility
         AddTextComponentString(text)
         DrawText(_x, _y)
     end
